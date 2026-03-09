@@ -1,26 +1,47 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0a0a0c;
+    --foreground: #f0f0f5;
+    --primary: #8b5cf6;
+    --primary-glow: rgba(139, 92, 246, 0.4);
+    --secondary: #1e1e26;
+    --accent: #f43f5e;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    direction: rtl;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl;
+  }
+
+  .glow-button {
+    @apply bg-violet-600 text-white px-6 py-3 rounded-xl font-bold transition-all duration-300;
+    box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+  }
+
+  .glow-button:hover {
+    @apply -translate-y-0.5;
+    box-shadow: 0 0 25px rgba(139, 92, 246, 0.6);
+  }
+
+  .input-field {
+    @apply bg-white/5 border border-white/10 p-3 rounded-xl text-white w-full outline-none transition-colors duration-300;
+  }
+
+  .input-field:focus {
+    @apply border-violet-500;
+  }
+
+  .title-gradient {
+    @apply bg-gradient-to-r from-violet-400 to-rose-400 bg-clip-text text-transparent font-black;
+  }
 }

@@ -28,6 +28,7 @@ export interface Room {
     roundWinner: 'group' | 'imposter' | null;
     winReason: string | null;
     roundTimer: number | null;
+    roundNumber: number; // internal round counter for alternating turn order
 }
 
 class GameStore {
@@ -49,6 +50,7 @@ class GameStore {
             roundWinner: null,
             winReason: null,
             roundTimer: null,
+            roundNumber: 0,
         });
         return roomId;
     }
@@ -89,7 +91,7 @@ class GameStore {
 
     startGame(roomId: string) {
         const room = this.getRoom(roomId);
-        if (!room || Object.keys(room.players).length < 2) return; // Require at least 2 for testing, ideally 3+
+        if (!room || Object.keys(room.players).length < 2) return;
 
         const { word, categoryHint } = getRandomWord();
         room.secretWord = word;
@@ -105,9 +107,26 @@ class GameStore {
         room.votes = {};
         room.roundWinner = null;
         room.winReason = null;
+        room.roundNumber = (room.roundNumber || 0) + 1;
 
-        // Randomize turn order
-        room.turnOrder = [...playerIds].sort(() => Math.random() - 0.5);
+        // Build turn order: alternate shuffle vs reverse each round
+        let order: string[];
+        if (room.roundNumber % 2 === 1) {
+            // Odd rounds: fresh shuffle
+            order = [...playerIds].sort(() => Math.random() - 0.5);
+        } else {
+            // Even rounds: reverse the previous order
+            order = [...room.turnOrder].reverse();
+        }
+
+        // Secret mechanic: ensure the imposter is never first (always position 1+)
+        const imposterPos = order.indexOf(room.imposterId);
+        if (imposterPos === 0 && order.length > 1) {
+            // Swap imposter with position 1
+            [order[0], order[1]] = [order[1], order[0]];
+        }
+
+        room.turnOrder = order;
         room.currentTurnIndex = 0;
 
         // Assign roles
@@ -173,32 +192,34 @@ class GameStore {
         const playerIds = Object.keys(room.players);
         const majorityThreshold = Math.floor(playerIds.length / 2) + 1;
 
+        // --- Check for skip majority ---
         if (skipCount >= majorityThreshold) {
-            // Skipped, go back to playing if there's no auto-win conditions yet
-            // For simplicity, skip just moves to next round of hints
-            room.phase = 'playing';
-            room.currentTurnIndex = 0;
-            for (const pid of playerIds) {
-                room.players[pid].hasHinted = false;
-                room.players[pid].hasVoted = false;
-            }
-            room.hints = {};
-            room.votes = {};
+            this.doSkip(room, playerIds);
             return;
         }
 
-        // Find who got most votes
+        // --- Find top vote-getter and check for ties ---
         let highestVotes = 0;
         let eliminatedId: string | null = null;
+        let tied = false;
 
         for (const [pid, count] of Object.entries(voteCounts)) {
             if (count > highestVotes) {
                 highestVotes = count;
                 eliminatedId = pid;
+                tied = false;
+            } else if (count === highestVotes) {
+                tied = true; // More than one player has the same top count → tie
             }
         }
 
-        // Assign points for correct votes
+        // Tie = treat as skip
+        if (tied || eliminatedId === null) {
+            this.doSkip(room, playerIds);
+            return;
+        }
+
+        // Award correct-vote points
         for (const [pid, vote] of Object.entries(room.votes)) {
             if (vote === room.imposterId && pid !== room.imposterId) {
                 room.players[pid].score += 10;
@@ -206,17 +227,21 @@ class GameStore {
         }
 
         if (eliminatedId === room.imposterId) {
-            // Imposter caught. They have one last chance to guess.
-            // We will handle this in UI, but for store, let's say Group wins if imposter doesn't do "last chance guess"
-            // Let's implement Last Chance in V1.5, for now Group wins outright.
             this.endRound(room, 'group', 'הקבוצה תפסה את האימפוסטר בהצלחה!');
         } else {
-            // Wrong person eliminated. Eliminate them from game? Or Imposter wins?
-            // Rules: Imposter wins if they survive until it's 1vs1.
-            // Here let's just say if wrong person voted, game continues or imposter wins?
-            // For simplicity in this fast prototype: Imposter wins if group votes wrong person.
             this.endRound(room, 'imposter', 'הקבוצה הצביעה על האדם הלא נכון. האימפוסטר ניצח!');
         }
+    }
+
+    private doSkip(room: Room, playerIds: string[]) {
+        room.phase = 'playing';
+        room.currentTurnIndex = 0;
+        for (const pid of playerIds) {
+            room.players[pid].hasHinted = false;
+            room.players[pid].hasVoted = false;
+        }
+        room.hints = {};
+        room.votes = {};
     }
 
     imposterLastChance(roomId: string, guess: string) {
